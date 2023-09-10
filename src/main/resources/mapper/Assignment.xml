@@ -1,0 +1,406 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.postinforg.annoscoreapi.mapper.AssignmentMapper">
+	
+	<select id="selectAssignmentTotal" resultType="int" parameterType="hashmap">
+	/* AssignmentMapper.selectAssignmentTotal */
+		SELECT count(*) FROM assignment t
+		WHERE 1=1
+			<if test="userno != null and userno != '0'">AND t.orgcode = (SELECT orgcode FROM userorg WHERE userno = #{userno})</if>
+			<if test='orgcode != null and orgcode != "0"'>AND t.orgcode = #{orgcode}</if>
+			<if test='delyn != null and delyn != ""'>AND t.delyn = #{delyn}</if>
+			<if test='delyn == null or delyn == ""'>AND t.delyn = 'N'</if>
+	</select>
+	
+	<select id="selectAssignmentList" resultType="egovMap" parameterType="hashmap">
+	/* AssignmentMapper.selectAssignmentList */
+		SELECT t.*
+			, (SELECT count(*) FROM assignment_hgt b WHERE b.assignmentno = t.no)
+				as hgtCount
+			, d.no AS datasetno
+			, r.no AS reportno
+		FROM assignment t
+		LEFT OUTER JOIN dataset d
+			ON d.assignmentno = t.no AND d.delyn = 'N' AND d.settype = 1
+		LEFT OUTER JOIN report r
+			ON r.assignmentno = t.no AND r.delyn = 'N' AND r.datasetno = d.no
+		WHERE 1=1
+			<if test="userno != null and userno != '0'">AND t.orgcode = (SELECT orgcode FROM userorg WHERE userno = #{userno})</if>
+			<if test='orgcode != null and orgcode != "0"'>AND t.orgcode = #{orgcode}</if>
+			<if test='delyn != null and delyn != ""'>AND t.delyn = #{delyn}</if>
+			<if test='delyn == null or delyn == ""'>AND t.delyn = 'N'</if>
+		ORDER BY t.no
+		LIMIT #{limit} OFFSET #{offset}
+	</select>
+	
+	<select id="selectAssignmentCounterList" resultType="egovMap" parameterType="hashmap">
+	/* AssignmentMapper.selectAssignmentCounterList */
+		<foreach collection="list" item="item" separator="UNION ALL">
+		SELECT #{item.no} as assignmentNo 
+			, (SELECT count(*) FROM labeling_${item.assString}) as labelingTotal
+			, (SELECT count(*) FROM labeling_${item.assString} WHERE mgtflag = '1') as mgtCount
+		</foreach>
+	</select>
+	
+	<select id="getAssignmentDetail" resultType="egovMap" parameterType="hashmap">
+	/* AssignmentMapper.getAssignmentDetail */
+		SELECT t.*
+			, (SELECT count(*) FROM labeling_${assString})
+				as labelingTotal
+			, (SELECT count(*) FROM labeling_${assString} WHERE mgtflag = '1')
+				as mgtTotalCount
+			, (SELECT count(*) FROM assignment_hgt b WHERE b.assignmentno = t.no)
+				as hgtCount
+			, d.no AS datasetno
+			, r.no AS reportno
+			, MAX(e.creationtime) AS dt
+		FROM assignment t
+		LEFT OUTER JOIN dataset d
+			ON d.assignmentno = t.no AND d.delyn = 'N' AND d.settype = 1
+		LEFT OUTER JOIN report r
+			ON r.assignmentno = t.no AND r.delyn = 'N' AND r.datasetno = d.no
+		LEFT OUTER JOIN eval_big e
+			ON e.assignmentno = t.no
+		WHERE t.no = #{assignmentno}
+	</select>
+	
+	<update id="assignmentDel" parameterType="string">
+	/* AssignmentMapper.assignmentDel */
+		UPDATE assignment set
+			updatetime = current_timestamp()
+			, delyn = 'Y'
+		WHERE no = #{tno}
+	</update>
+	
+	<insert id="assignmentAdd" parameterType="hashmap" useGeneratedKeys="true" keyProperty="no">
+	/* AssignmentMapper.assignmentAdd */
+		INSERT INTO assignment
+			(name, note, orgcode, userno, location
+			, `usage`, creationtime, updatetime , delyn)
+		VALUES(#{name}, #{note}, #{orgcode}, #{userno}, #{location}
+			, #{usage}, current_timestamp(), current_timestamp() , 'N')
+		<selectKey keyProperty="no" resultType="Integer" order="AFTER">
+			SELECT LAST_INSERT_ID() 
+		</selectKey>
+	</insert>
+	
+	<insert id="assignmentUpdate" parameterType="hashmap">
+	/* AssignmentMapper.assignmentUpdate */
+		UPDATE assignment SET
+			updatetime = current_timestamp()
+			<if test='name != null and name != ""'>, name = #{name}</if>
+			<if test='note != null and note != ""'>, note = #{note}</if>
+			<if test='mgtyn != null and mgtyn != ""'>, mgtyn = #{mgtyn}</if>
+			<if test='modelname != null and modelname != ""'>, modelname = #{modelname}</if>
+			<if test='modelyn != null and modelyn != ""'>, modelyn = #{modelyn}</if>
+			<if test='envinfo != null'>, envinfo = #{envinfo}</if>
+			<if test='mgtcount != null'>, mgtcount = #{mgtcount}</if>
+			<if test='mgtcount == null'>, mgtcount = (
+				SELECT COUNT(*) FROM labeling a
+				WHERE a.assignmentno = #{no}
+					AND a.mgtflag = '1'
+			)</if>
+			<if test='mgttime != null'>, mgttime = date_format(#{mgttime}, '%Y%m%d%H%i%s')</if>
+		WHERE no = #{no}
+	</insert>
+	
+	<update id="updateMgtCount" parameterType="hashmap">
+	/* AssignmentMapper.updateMgtCount */
+		UPDATE assignment set
+			mgtcount = (
+				SELECT COUNT(*) FROM labeling a
+				WHERE a.assignmentno = #{assignmentno}
+					AND a.mgtflag = '1'
+			)
+			, updatetime = current_timestamp()
+		WHERE no = #{assignmentno}
+	</update>
+	
+	<update id="updateAssignmentUsageDate" parameterType="hashmap">
+	/* AssignmentMapper.updateAssignmentUsageDate */
+		UPDATE assignment set
+			updatetime = current_timestamp()
+			<if test='usage != null'>, `usage` = #{usage}</if>
+		WHERE no = #{assignmentno}
+	</update>
+	
+	<insert id="insertUploadZip" parameterType="hashmap" useGeneratedKeys="true" keyProperty="no">
+	/* AssignmentMapper.insertUploadZip 
+	*/
+		INSERT INTO uploadzip
+			(assignmentno, orgfilename, savefilename, uploadpath, uploaduserno)
+		VALUES (#{assignmentno}, #{orgfilename}, #{savefilename}, #{uploadpath}, #{userno})
+		<selectKey keyProperty="no" resultType="Integer" order="AFTER">
+			SELECT LAST_INSERT_ID() 
+		</selectKey>
+	</insert>
+	
+	<insert id="insertUploadFileBulk" parameterType="hashmap">
+	/* AssignmentMapper.insertUploadFileBulk
+	*/
+		INSERT INTO labeling
+			(assignmentno, location, imagedir, imagefile, imagesize, imagewidth
+			, imageheight, imageratio, imagevalidity , imagedate, imageupdate
+			, labelingdir, labelingfile, labelingsize, labelingvalidity , labelingdate, labelingupdate)
+		VALUES <foreach collection="list" item="item" separator=",">
+			(#{assignmentno}, #{location}, #{item.imagePath}, #{item.imageName}, #{item.imageSize}, #{item.imageWidth}
+			, #{item.imageHeight}, #{item.imageRatio}, #{item.imageValidity} , str_to_date(#{item.imageDate}, '%Y%m%d %H%i%s'), str_to_date(#{item.imageUpdate}, '%Y%m%d %H%i%s')
+			, #{item.jsonPath}, #{item.jsonName}, #{item.jsonSize}, #{item.jsonValidity}
+			, str_to_date(#{item.jsonDate}, '%Y%m%d %H%i%s'), str_to_date(#{item.jsonUpdate}, '%Y%m%d %H%i%s')) </foreach>
+	</insert>
+	
+	<insert id="insertUploadFileBulkDetail" parameterType="hashmap">
+	/* AssignmentMapper.insertUploadFileBulkDetail
+	*/
+		INSERT INTO labeling_detail
+			(assignmentno, labelingdir, labelingfile, classname, shapetype, objectcount)
+		VALUES <foreach collection="listDetail" item="item" separator=",">
+			(#{assignmentno}, #{item.labelingDir}, #{item.labelingFile}, #{item.clsName}, #{item.shapeType}, #{item.cnt}) </foreach>
+	</insert>
+	
+	<update id="evalReqUpdate" parameterType="hashmap">
+	/* AssignmentMapper.evalReqUpdate */
+		UPDATE assignment set
+			updatetime = current_timestamp()
+			<if test='evalreqdate != null and evalreqdate !=""'>, evalreqdate = current_timestamp()</if>
+			<if test='evalresdate != null and evalresdate !=""'>, evalresdate = evalreqdate</if>
+		WHERE no = #{assignmentno}
+	</update>
+	
+	<update id="locationUpdate" parameterType="hashmap">
+	/* AssignmentMapper.locationUpdate */
+		UPDATE assignment set
+			location = #{location}
+		WHERE no = #{assignmentno}
+	</update>
+	
+	
+	<update id="createAssignmentTables" parameterType="hashmap">
+	/* AssignmentMapper.createAssignmentTables */
+		CREATE TABLE `labeling_${assString}` (
+			`no` int(11) NOT NULL AUTO_INCREMENT,
+			`imagedir` varchar(255) NOT NULL COMMENT '이미지경로',
+			`imagefile` varchar(200) NOT NULL COMMENT '이미지명',
+			`imagesize` int(11) NOT NULL DEFAULT 0 COMMENT '이미지 파일 크기',
+			`imagewidth` int(11) NOT NULL DEFAULT 0 COMMENT 'width',
+			`imageheight` int(11) NOT NULL DEFAULT 0 COMMENT 'height',
+			`imageratio` double NOT NULL DEFAULT 0 COMMENT 'ratio',
+			`imagedate` datetime DEFAULT current_timestamp(),
+			`imageupdate` datetime DEFAULT current_timestamp(),
+			`imagevalidity` int(1) NOT NULL DEFAULT 1 COMMENT '이미지 파일 유효성 여부, 0:유효',
+			`labelingdir` varchar(255) DEFAULT NULL COMMENT '라벨링경로',
+			`labelingfile` varchar(200) DEFAULT NULL COMMENT '라벨링명',
+			`labelingsize` int(11) NOT NULL DEFAULT 0 COMMENT '라벨링 파일 크기',
+			`labelingdate` datetime DEFAULT current_timestamp(),
+			`labelingupdate` datetime DEFAULT current_timestamp(),
+			`labelingvalidity` int(1) NOT NULL DEFAULT 1 COMMENT '라벨링 파일 유효성 여부, 0:유효',
+			`mgtdir` varchar(200) DEFAULT NULL COMMENT 'M-GT경로',
+			`mgtfile` varchar(200) DEFAULT NULL COMMENT 'M-GT명',
+			`mgtflag` varchar(5) DEFAULT '0' COMMENT 'M-GT 생성여부',
+			`mgttime` datetime DEFAULT NULL COMMENT 'M-GT 생성일시',
+			`status` varchar(5) DEFAULT '0' COMMENT '상태',
+			`checked` int(3) DEFAULT 0 COMMENT '체크여부',
+			`echecked` tinyint(4) DEFAULT 0,
+			`creationtime` datetime DEFAULT current_timestamp(),
+			`evaltime` datetime DEFAULT NULL,
+			`cls` varchar(100) NOT NULL,
+			`class_count` int(11) DEFAULT 0,
+			`obj_count` int(11) DEFAULT 0,
+			`asc_dev` double DEFAULT 0,
+			`asc` double DEFAULT 0,
+			`aiou` double DEFAULT 0 COMMENT 'iou 평균',
+			`fnc` int(11) DEFAULT 0 COMMENT 'fn_50 합',
+			`fpc` int(11) DEFAULT 0 COMMENT 'fp_50 합',
+			PRIMARY KEY (`no`),
+			UNIQUE KEY `labeling_${assString}_UN` (`labelingdir`,`labelingfile`),
+			KEY `labeling_${assString}_IDX2` (`imagefile`) USING BTREE,
+			KEY `labeling_${assString}_IDX3` (`imagesize`) USING BTREE,
+			KEY `labeling_${assString}_IDX4` (`imagewidth`) USING BTREE,
+			KEY `labeling_${assString}_IDX5` (`imageheight`) USING BTREE,
+			KEY `labeling_${assString}_IDX6` (`imageratio`) USING BTREE,
+			KEY `labeling_${assString}_IDX7` (`imageupdate`) USING BTREE,
+			KEY `labeling_${assString}_IDX8` (`labelingfile`) USING BTREE,
+			KEY `labeling_${assString}_IDX9` (`labelingsize`) USING BTREE,
+			KEY `labeling_${assString}_IDX10` (`labelingupdate`) USING BTREE,
+			KEY `labeling_${assString}_IDX11` (`asc`) USING BTREE,
+			KEY `labeling_${assString}_IDX12` (`aiou`) USING BTREE,
+			KEY `labeling_${assString}_IDX13` (`fnc`) USING BTREE,
+			KEY `labeling_${assString}_IDX14` (`fpc`) USING BTREE
+		) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='과제별 라벨링';
+		
+		CREATE TABLE `labeling_${assString}_detail` (
+			`no` int(11) NOT NULL AUTO_INCREMENT,
+			`labelingdir` varchar(255) NOT NULL COMMENT '부모 라벨링 경로',
+			`labelingfile` varchar(100) NOT NULL COMMENT '부모 라벨링 파일명',
+			`classname` varchar(100) NOT NULL COMMENT '클래스 명',
+			`shapetype` varchar(100) NOT NULL,
+			`objectcount` int(11) NOT NULL DEFAULT 0,
+			PRIMARY KEY (`no`),
+			UNIQUE KEY `labeling_${assString}_detail_UN` (`labelingdir`,`labelingfile`,`classname`),
+			KEY `labeling_${assString}_detail_labeling_dir_IDX` (`labelingdir`,`labelingfile`) USING BTREE
+		) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='라벨링 하위 (클래스별)';
+
+		CREATE TABLE `eval_file_${assString}_ref` (
+			`no` int(11) NOT NULL AUTO_INCREMENT,
+			`datasetno` int(11) NOT NULL,
+			`labelingno` int(11) NOT NULL,
+			`checked` tinyint(4) DEFAULT 0 COMMENT '체크여부',
+			PRIMARY KEY (`no`),
+			KEY `eval_file_${assString}_ref_IDX` (`labelingno`),
+			KEY `eval_file_${assString}_ref_datasetno_IDX` (`datasetno`,`checked`) USING BTREE,
+			CONSTRAINT `eval_file_${assString}_ref_FK1` FOREIGN KEY (`datasetno`) REFERENCES `dataset` (`no`),
+			CONSTRAINT `eval_file_${assString}_ref_FK2` FOREIGN KEY (`labelingno`) REFERENCES `labeling_${assString}` (`no`)
+		) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='평가 file 참조용';
+
+		CREATE TABLE `eval_obj_p0_${assString}` (
+			`no` int(11) NOT NULL AUTO_INCREMENT,
+			`file_name` varchar(200) DEFAULT NULL,
+			`cls` varchar(100) NOT NULL,
+			`obj_id` int(11) NOT NULL DEFAULT 0,
+			`correct` int(11) DEFAULT NULL,
+			`total` int(11) DEFAULT NULL,
+			`iou` double DEFAULT NULL,
+			`confidence` tinyint(4) DEFAULT NULL,
+			`diagonal` int(11) DEFAULT NULL,
+			`ratio` double DEFAULT NULL,
+			`width` int(11) DEFAULT NULL,
+			`height` int(11) DEFAULT NULL,
+			`histogram` int(11) DEFAULT NULL,
+			`shape_type` varchar(100) DEFAULT NULL,
+			`tp_50` tinyint(4) DEFAULT NULL,
+			`tp_55` tinyint(4) DEFAULT NULL,
+			`tp_60` tinyint(4) DEFAULT NULL,
+			`tp_65` tinyint(4) DEFAULT NULL,
+			`tp_70` tinyint(4) DEFAULT NULL,
+			`tp_75` tinyint(4) DEFAULT NULL,
+			`tp_80` tinyint(4) DEFAULT NULL,
+			`tp_85` tinyint(4) DEFAULT NULL,
+			`tp_90` tinyint(4) DEFAULT NULL,
+			`tp_95` tinyint(4) DEFAULT NULL,
+			`fp_50` tinyint(4) DEFAULT NULL,
+			`fp_55` tinyint(4) DEFAULT NULL,
+			`fp_60` tinyint(4) DEFAULT NULL,
+			`fp_65` tinyint(4) DEFAULT NULL,
+			`fp_70` tinyint(4) DEFAULT NULL,
+			`fp_75` tinyint(4) DEFAULT NULL,
+			`fp_80` tinyint(4) DEFAULT NULL,
+			`fp_85` tinyint(4) DEFAULT NULL,
+			`fp_90` tinyint(4) DEFAULT NULL,
+			`fp_95` tinyint(4) DEFAULT NULL,
+			`fn_50` tinyint(4) DEFAULT NULL,
+			`fn_55` tinyint(4) DEFAULT NULL,
+			`fn_60` tinyint(4) DEFAULT NULL,
+			`fn_65` tinyint(4) DEFAULT NULL,
+			`fn_70` tinyint(4) DEFAULT NULL,
+			`fn_75` tinyint(4) DEFAULT NULL,
+			`fn_80` tinyint(4) DEFAULT NULL,
+			`fn_85` tinyint(4) DEFAULT NULL,
+			`fn_90` tinyint(4) DEFAULT NULL,
+			`fn_95` tinyint(4) DEFAULT NULL,
+			`blur_coef` double DEFAULT NULL,
+			`checked` tinyint(4) NOT NULL DEFAULT 0,
+			PRIMARY KEY (`no`),
+			UNIQUE KEY `eval_obj_${assString}_cls_object_UN` (`cls`,`obj_id`),
+			KEY `eval_obj_p0_${assString}_cls_IDX` (`cls`) USING BTREE,
+			KEY `eval_obj_p0_${assString}_shapetype_IDX` (`shape_type`) USING BTREE,
+			KEY `eval_obj_p0_${assString}_all_IDX` (`cls`,`width`,`height`,`ratio`,`diagonal`,`shape_type`) USING BTREE,
+			KEY `eval_obj_p0_${assString}_file_IDX` (`file_name`),
+			KEY `eval_obj_p0_${assString}_diagonal_IDX` (`diagonal`) USING BTREE
+		) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='과제별 object 정리';
+
+		CREATE TABLE `eval_obj_p1_${assString}` (
+			`no` int(11) NOT NULL AUTO_INCREMENT,
+			`file_name` varchar(200) DEFAULT NULL,
+			`cls` varchar(100) NOT NULL,
+			`obj_id` int(11) NOT NULL DEFAULT 0,
+			`correct` int(11) DEFAULT NULL,
+			`total` int(11) DEFAULT NULL,
+			`iou` double DEFAULT NULL,
+			`confidence` tinyint(4) DEFAULT NULL,
+			`diagonal` int(11) DEFAULT NULL,
+			`ratio` double DEFAULT NULL,
+			`width` int(11) DEFAULT NULL,
+			`height` int(11) DEFAULT NULL,
+			`histogram` int(11) DEFAULT NULL,
+			`shape_type` varchar(100) DEFAULT NULL,
+			`tp_50` tinyint(4) DEFAULT NULL,
+			`tp_55` tinyint(4) DEFAULT NULL,
+			`tp_60` tinyint(4) DEFAULT NULL,
+			`tp_65` tinyint(4) DEFAULT NULL,
+			`tp_70` tinyint(4) DEFAULT NULL,
+			`tp_75` tinyint(4) DEFAULT NULL,
+			`tp_80` tinyint(4) DEFAULT NULL,
+			`tp_85` tinyint(4) DEFAULT NULL,
+			`tp_90` tinyint(4) DEFAULT NULL,
+			`tp_95` tinyint(4) DEFAULT NULL,
+			`fp_50` tinyint(4) DEFAULT NULL,
+			`fp_55` tinyint(4) DEFAULT NULL,
+			`fp_60` tinyint(4) DEFAULT NULL,
+			`fp_65` tinyint(4) DEFAULT NULL,
+			`fp_70` tinyint(4) DEFAULT NULL,
+			`fp_75` tinyint(4) DEFAULT NULL,
+			`fp_80` tinyint(4) DEFAULT NULL,
+			`fp_85` tinyint(4) DEFAULT NULL,
+			`fp_90` tinyint(4) DEFAULT NULL,
+			`fp_95` tinyint(4) DEFAULT NULL,
+			`fn_50` tinyint(4) DEFAULT NULL,
+			`fn_55` tinyint(4) DEFAULT NULL,
+			`fn_60` tinyint(4) DEFAULT NULL,
+			`fn_65` tinyint(4) DEFAULT NULL,
+			`fn_70` tinyint(4) DEFAULT NULL,
+			`fn_75` tinyint(4) DEFAULT NULL,
+			`fn_80` tinyint(4) DEFAULT NULL,
+			`fn_85` tinyint(4) DEFAULT NULL,
+			`fn_90` tinyint(4) DEFAULT NULL,
+			`fn_95` tinyint(4) DEFAULT NULL,
+			`blur_coef` double DEFAULT NULL,
+			`checked` tinyint(4) NOT NULL DEFAULT 0,
+			PRIMARY KEY (`no`),
+			UNIQUE KEY `eval_obj_${assString}_cls_object_UN` (`cls`,`obj_id`),
+			KEY `eval_obj_p1_${assString}_cls_IDX` (`cls`) USING BTREE,
+			KEY `eval_obj_p1_${assString}_shapetype_IDX` (`shape_type`) USING BTREE,
+			KEY `eval_obj_p1_${assString}_all_IDX` (`cls`,`width`,`height`,`ratio`,`diagonal`,`shape_type`) USING BTREE,
+			KEY `eval_obj_p1_${assString}_file_IDX` (`file_name`),
+			KEY `eval_obj_p1_${assString}_diagonal_IDX` (`diagonal`) USING BTREE
+		) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='과제별 object 정리';
+
+		CREATE TABLE `eval_obj_p0_${assString}_ref` (
+			`no` int(11) NOT NULL AUTO_INCREMENT,
+			`datasetno` int(11) NOT NULL,
+			`evalobjno` int(11) NOT NULL,
+			`checked` tinyint(4) NOT NULL DEFAULT 0 COMMENT '체크여부',
+			PRIMARY KEY (`no`),
+			KEY `eval_obj_p0_${assString}_ref_FK` (`evalobjno`),
+			KEY `eval_obj_p0_${assString}_ref_datasetno_cheked_IDX` (`datasetno`,`checked`) USING BTREE,
+			KEY `eval_obj_p0_${assString}_ref_datasetno_IDX` (`datasetno`) USING BTREE,
+			CONSTRAINT `eval_obj_p0_${assString}_ref_FK1` FOREIGN KEY (`evalobjno`) REFERENCES `eval_obj_p0_${assString}` (`no`),
+			CONSTRAINT `eval_obj_p0_${assString}_ref_FK2` FOREIGN KEY (`datasetno`) REFERENCES `dataset` (`no`)
+		) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='고제별 object 참조용';
+
+		CREATE TABLE `eval_obj_p1_${assString}_ref` (
+			`no` int(11) NOT NULL AUTO_INCREMENT,
+			`datasetno` int(11) NOT NULL,
+			`evalobjno` int(11) NOT NULL,
+			`checked` tinyint(4) NOT NULL DEFAULT 0 COMMENT '체크여부',
+			PRIMARY KEY (`no`),
+			KEY `eval_obj_p1_${assString}_ref_FK` (`evalobjno`),
+			KEY `eval_obj_p1_${assString}_ref_datasetno_cheked_IDX` (`datasetno`,`checked`) USING BTREE,
+			KEY `eval_obj_p1_${assString}_ref_datasetno_IDX` (`datasetno`) USING BTREE,
+			CONSTRAINT `eval_obj_p1_${assString}_ref_FK1` FOREIGN KEY (`evalobjno`) REFERENCES `eval_obj_p1_${assString}` (`no`),
+			CONSTRAINT `eval_obj_p1_${assString}_ref_FK2` FOREIGN KEY (`datasetno`) REFERENCES `dataset` (`no`)
+		) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='고제별 object 참조용';
+
+		CREATE TABLE `dataset_labeling_${assString}` (
+			`datasetno` int(11) NOT NULL,
+			`labelingno` int(11) NOT NULL,
+			`checked` int(3) DEFAULT 0 COMMENT '체크여부',
+			PRIMARY KEY (`datasetno`,`labelingno`),
+			KEY `dataset_labeling_${assString}_FK` (`labelingno`),
+			KEY `dataset_labeling_${assString}_IDX` (`datasetno`) USING BTREE,
+			KEY `dataset_labeling_${assString}_datasetno_IDX` (`datasetno`,`checked`) USING BTREE,
+			CONSTRAINT `dataset_labeling_${assString}_FK1` FOREIGN KEY (`datasetno`) REFERENCES `dataset` (`no`),
+			CONSTRAINT `dataset_labeling_${assString}_FK2` FOREIGN KEY (`labelingno`) REFERENCES `labeling_${assString}` (`no`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='데이터셋 매핑 테이블';
+	</update>
+	
+</mapper>
